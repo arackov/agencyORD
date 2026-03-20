@@ -1,4 +1,3 @@
-﻿
 import os
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
@@ -8,20 +7,31 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 import asyncio
+import threading
+from flask import Flask
 
+# Загружаем переменные окружения
 load_dotenv()
 
 API_TOKEN = os.getenv("TG_BOT_API_KEY")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
+# Создаем объекты бота
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+
+# Создаем Flask приложение для Health Check
+app = Flask(__name__)
+
+@app.route('/')
+@app.route('/health')
+def health():
+    return "Bot is running", 200
 
 questions = [
     "1. Наименование вашего юридического лица с указанием инн (Отвечать только в таком формате: ООО «Ромашка» 765432675)",
     "2. Номер и дата договора между нами (При наличии приложения указать договор + приложение)",
-    "3. Сумма услуг (общая сумма) (При наличии в договоре детализации на размещение - указать сумму на размещение и сумму общую. 
-Отвечать только в таком формате: 25324,33 или 25324,33 - размещение, 50000 - общая)",
+    "3. Сумма услуг (общая сумма) (При наличии в договоре детализации на размещение - указать сумму на размещение и сумму общую. Отвечать только в таком формате: 25324,33 или 25324,33 - размещение, 50000 - общая)",
     "4. Рекламодатель (Обязательно указание инн. Отвечать только в таком формате: ООО «Ромашка» 784565432)",
     "5. Первый исполнитель в цепочке договоров с рекламодателем (Обязательно указание инн. Отвечать только в таком формате: ООО «Ромашка» 784565432)",
     "6. Номер и дата изначального договора (между рекламодателем и первым исполнителем в цепочке договоров с рекламодателем) (Отвечать только в таком формате: № 1882 от 21.06.2025)",
@@ -64,5 +74,15 @@ async def process_form(message: Message, state: FSMContext):
 async def main():
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
+def run_bot():
     asyncio.run(main())
+
+if __name__ == "__main__":
+    # Запускаем бота в отдельном потоке
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.daemon = True
+    bot_thread.start()
+    
+    # Запускаем Flask сервер для Render
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
