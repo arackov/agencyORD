@@ -18,6 +18,9 @@ ADMIN_ID = int(os.getenv("ADMIN_ID"))
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# Флаг для предотвращения двойного запуска
+bot_started = False
+
 # Создаем Flask приложение для Health Check
 flask_app = Flask(__name__)
 
@@ -44,6 +47,8 @@ class Form(StatesGroup):
 
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
+    # Очищаем состояние перед началом новой анкеты
+    await state.clear()
     await state.set_state(Form.step)
     await state.update_data(answers=[], step=0)
     await message.answer("Заполните информацию:\n" + questions[0])
@@ -51,9 +56,17 @@ async def start(message: Message, state: FSMContext):
 @dp.message(Form.step)
 async def process_form(message: Message, state: FSMContext):
     data = await state.get_data()
-    answers = data["answers"]
-    step = data["step"]
+    
+    # Проверяем, есть ли данные, если нет - инициализируем
+    if not data:
+        await state.set_state(Form.step)
+        await state.update_data(answers=[], step=0)
+        data = await state.get_data()
+    
+    answers = data.get("answers", [])
+    step = data.get("step", 0)
 
+    # Сохраняем ответ
     answers.append(message.text)
     step += 1
 
@@ -69,23 +82,34 @@ async def process_form(message: Message, state: FSMContext):
         await message.answer("Спасибо! Данные отправлены.")
         await state.clear()
 
+async def reset_webhook():
+    """Сбрасываем вебхук перед запуском"""
+    await bot.delete_webhook(drop_pending_updates=True)
+    print("✅ Webhook deleted, pending updates dropped")
+
+async def main():
+    """Запускаем бота"""
+    global bot_started
+    if bot_started:
+        print("⚠️ Bot already started, skipping...")
+        return
+    bot_started = True
+    
+    await reset_webhook()
+    print("🚀 Starting bot polling...")
+    await dp.start_polling(bot)
+
 def run_flask():
     """Запускаем Flask в отдельном потоке"""
     port = int(os.environ.get('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-
-async def main():
-    """Запускаем бота"""
-    print("Starting bot polling...")
-    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     # Запускаем Flask в отдельном потоке
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
-    print("Flask server started in background thread")
+    print("🌐 Flask server started in background thread")
     
     # Запускаем бота в основном потоке
-    print("Starting bot...")
     asyncio.run(main())
