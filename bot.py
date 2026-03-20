@@ -1,4 +1,7 @@
 import os
+import asyncio
+import threading
+from flask import Flask
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
 from aiogram.filters import CommandStart
@@ -6,8 +9,6 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
-import asyncio
-from flask import Flask
 
 load_dotenv()
 
@@ -68,27 +69,23 @@ async def process_form(message: Message, state: FSMContext):
         await message.answer("Спасибо! Данные отправлены.")
         await state.clear()
 
+def run_flask():
+    """Запускаем Flask в отдельном потоке"""
+    port = int(os.environ.get('PORT', 10000))
+    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
 async def main():
+    """Запускаем бота"""
+    print("Starting bot polling...")
     await dp.start_polling(bot)
 
-async def run_bot_and_flask():
-    # Запускаем polling бота в фоне
-    bot_task = asyncio.create_task(main())
-    
-    # Запускаем Flask в отдельном потоке
-    port = int(os.environ.get('PORT', 10000))
-    
-    # Используем asyncio.to_thread для запуска Flask в отдельном потоке
-    # Это не мешает asyncio и не вызывает проблем с сигналами
-    await asyncio.to_thread(
-        flask_app.run, 
-        host='0.0.0.0', 
-        port=port, 
-        debug=False, 
-        use_reloader=False
-    )
-    
-    await bot_task
-
 if __name__ == "__main__":
-    asyncio.run(run_bot_and_flask())
+    # Запускаем Flask в отдельном потоке
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    print("Flask server started in background thread")
+    
+    # Запускаем бота в основном потоке
+    print("Starting bot...")
+    asyncio.run(main())
