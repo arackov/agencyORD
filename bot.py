@@ -7,24 +7,21 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 import asyncio
-import threading
 from flask import Flask
 
-# Загружаем переменные окружения
 load_dotenv()
 
 API_TOKEN = os.getenv("TG_BOT_API_KEY")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
-# Создаем объекты бота
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 # Создаем Flask приложение для Health Check
-app = Flask(__name__)
+flask_app = Flask(__name__)
 
-@app.route('/')
-@app.route('/health')
+@flask_app.route('/')
+@flask_app.route('/health')
 def health():
     return "Bot is running", 200
 
@@ -74,15 +71,24 @@ async def process_form(message: Message, state: FSMContext):
 async def main():
     await dp.start_polling(bot)
 
-def run_bot():
-    asyncio.run(main())
+async def run_bot_and_flask():
+    # Запускаем polling бота в фоне
+    bot_task = asyncio.create_task(main())
+    
+    # Запускаем Flask в отдельном потоке
+    port = int(os.environ.get('PORT', 10000))
+    
+    # Используем asyncio.to_thread для запуска Flask в отдельном потоке
+    # Это не мешает asyncio и не вызывает проблем с сигналами
+    await asyncio.to_thread(
+        flask_app.run, 
+        host='0.0.0.0', 
+        port=port, 
+        debug=False, 
+        use_reloader=False
+    )
+    
+    await bot_task
 
 if __name__ == "__main__":
-    # Запускаем бота в отдельном потоке
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.daemon = True
-    bot_thread.start()
-    
-    # Запускаем Flask сервер для Render
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    asyncio.run(run_bot_and_flask())
